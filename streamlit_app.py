@@ -4,8 +4,8 @@ import time
 
 st.title("💬 selfish teenager")
 st.write(
-    "Dieser Chatbot nutzt einen OpenAI Assistant über die Assistants API. "
-    "Gib unten deinen OpenAI API Key ein, um loszulegen."
+    "This Chatbot is a selfish teenager who only cares about itself "
+    "OpenAi API Key"
 )
 
 # Eingabe des API-Keys
