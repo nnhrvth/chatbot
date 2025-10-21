@@ -2,7 +2,7 @@ import streamlit as st
 from openai import OpenAI
 import time
 
-st.title("💬 Custom Assistant Chatbot")
+st.title("💬 selfish teenager")
 st.write(
     "Dieser Chatbot nutzt einen OpenAI Assistant über die Assistants API. "
     "Gib unten deinen OpenAI API Key ein, um loszulegen."
