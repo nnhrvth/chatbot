@@ -9,8 +9,14 @@ import uuid
 # KONFIGURATION
 # ==================================================
 
-st.set_page_config(page_title="MediMini", layout="wide")
-st.title("MediMini - Smart Medication Assistant")
+st.set_page_config(
+    page_title="MediMini",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.title("MediMini")
+st.subheader("Smart Medication Assistant")
 
 DATA_FILE = "data.json"
 USER_ID = "u1"
@@ -20,9 +26,7 @@ USER_ID = "u1"
 # ==================================================
 
 DEFAULT_DATA = {
-    "users": [
-        {"id": "u1", "email": "demo@example.com"}
-    ],
+    "users": [{"id": "u1", "email": "demo@example.com"}],
     "medications": [],
     "rules": [
         {
@@ -83,18 +87,22 @@ def generate_new_time(old_time):
     return (parser.isoparse(old_time) + timedelta(minutes=120)).isoformat()
 
 # ==================================================
-# UI - MEDIKAMENT HINZUFUEGEN
+# DATEN LADEN
 # ==================================================
 
 data = load_data()
 medications = get_medications_for_user(data, USER_ID)
 rules = data["rules"]
 
+# ==================================================
+# SIDEBAR - MEDIKAMENT HINZUFUEGEN
+# ==================================================
+
 st.sidebar.header("Medikament hinzufuegen")
 
 with st.sidebar.form("add_med_form", clear_on_submit=True):
-    name = st.text_input("Name des Medikaments")
-    dose = st.text_input("Dosis (z.B. 10mg)")
+    name = st.text_input("Name")
+    dose = st.text_input("Dosis (optional)")
     time = st.text_input(
         "Einnahmezeit (ISO-Format)",
         placeholder="2025-12-11T08:00:00"
@@ -104,10 +112,10 @@ with st.sidebar.form("add_med_form", clear_on_submit=True):
 
     if submitted:
         if not name or not time:
-            st.error("Name und Einnahmezeit sind Pflichtfelder.")
+            st.sidebar.error("Name und Einnahmezeit sind Pflichtfelder.")
         else:
             try:
-                parser.isoparse(time)  # Validierung
+                parser.isoparse(time)
                 data["medications"].append({
                     "id": str(uuid.uuid4()),
                     "user_id": USER_ID,
@@ -116,28 +124,46 @@ with st.sidebar.form("add_med_form", clear_on_submit=True):
                     "times": [time]
                 })
                 save_data(data)
-                st.success("Medikament erfolgreich hinzugefuegt")
                 st.experimental_rerun()
             except Exception:
-                st.error("Ungueltiges Zeitformat.")
+                st.sidebar.error("Ungueltiges Zeitformat.")
 
 # ==================================================
-# UI - EINNAHMEPLAN
+# HAUPTBEREICH - EINNAHMEPLAN
 # ==================================================
 
-st.header("Einnahmeplan")
+st.markdown("## Einnahmeplan")
 
 if not medications:
-    st.info("Noch keine Medikamente hinterlegt.")
+    st.info("Noch keine Medikamente eingetragen.")
 else:
     for m in medications:
-        st.write(
-            f"{m['name']} | Dosis: {m.get('dose','-')} | Zeiten: {m['times']}"
-        )
+        with st.container(border=True):
+            col1, col2, col3 = st.columns([3, 3, 1])
+
+            with col1:
+                st.markdown(f"**{m['name']}**")
+                st.write(f"Dosis: {m.get('dose','-')}")
+
+            with col2:
+                st.write("Einnahmezeiten:")
+                for t in m["times"]:
+                    st.code(t, language="text")
+
+            with col3:
+                if st.button("Loeschen", key=f"del_{m['id']}"):
+                    data["medications"] = [
+                        med for med in data["medications"]
+                        if med["id"] != m["id"]
+                    ]
+                    save_data(data)
+                    st.experimental_rerun()
 
 # ==================================================
-# UI - INTERAKTIONEN
+# INTERAKTIONEN
 # ==================================================
+
+st.markdown("## Interaktionen")
 
 if st.button("Interaktionen pruefen"):
     st.session_state["conflicts"] = check_conflicts(medications, rules)
@@ -151,31 +177,36 @@ if conflicts is not None:
         st.error(f"{len(conflicts)} Konflikt(e) erkannt")
 
         for idx, c in enumerate(conflicts):
-            st.write(
-                f"{c['med_a']} und {c['med_b']} "
-                f"({c['time_a']} / {c['time_b']})"
-            )
+            with st.container(border=True):
+                st.write(
+                    f"{c['med_a']} und {c['med_b']} "
+                    f"({c['time_a']} / {c['time_b']})"
+                )
 
-            if st.button("Vorschlag anwenden", key=f"apply_{idx}"):
-                new_time = generate_new_time(c["time_b"])
+                if st.button("Vorschlag anwenden", key=f"apply_{idx}"):
+                    new_time = generate_new_time(c["time_b"])
 
-                for m in data["medications"]:
-                    if m["name"] == c["med_b"]:
-                        m["times"] = [new_time]
+                    for m in data["medications"]:
+                        if m["name"] == c["med_b"]:
+                            m["times"] = [new_time]
 
-                data["changes_log"].append({
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "conflict": c,
-                    "new_time": new_time
-                })
+                    data["changes_log"].append({
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "conflict": c,
+                        "new_time": new_time
+                    })
 
-                save_data(data)
-                st.success("Vorschlag angewendet")
-                st.experimental_rerun()
+                    save_data(data)
+                    st.experimental_rerun()
 
 # ==================================================
 # FOOTER
 # ==================================================
 
-st.caption("MediMini ist ein Demonstrationsprojekt. Keine medizinische Beratung.")
+st.caption(
+    "MediMini ist ein Demonstrationsprojekt im Rahmen einer "
+    "Software-Engineering-Lehrveranstaltung. "
+    "Keine medizinische Beratung."
+)
+
 
