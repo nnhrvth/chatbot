@@ -1,76 +1,73 @@
 import streamlit as st
-from openai import OpenAI
-import time
+from src import storage, rule_engine, suggestion_engine
+from src.models import Medication
+import uuid
 
-st.title("💬 selfish teenager")
-st.write(
-    "This Chatbot is a selfish teenager who only cares about itself "
-    "OpenAi API Key"
-)
+st.set_page_config(page_title="MediMini", layout="wide")
+st.title("MediMini — Smart Medication Assistant")
 
-# Eingabe des API-Keys
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Bitte füge deinen OpenAI API Key ein, um fortzufahren.", icon="🗝️")
-else:
-    # Client erzeugen
-    client = OpenAI(api_key=openai_api_key)
+USER_ID = "u1"
 
-    # Session-States
-    if "thread_id" not in st.session_state:
-        thread = client.beta.threads.create()
-        st.session_state.thread_id = thread.id
+# Daten laden
+rules = storage.load_rules()
+meds = storage.get_medications_for_user(USER_ID)
 
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+st.sidebar.header("Aktionen")
 
-    # Vorherige Nachrichten anzeigen
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# Medikament hinzufügen
+with st.sidebar.expander("Medikament hinzufügen"):
+    with st.form("add_med"):
+        name = st.text_input("Name")
+        dose = st.text_input("Dosis")
+        times = st.text_input("Einnahmezeiten (ISO, z.B. 2025-12-11T08:00:00)")
+        submit = st.form_submit_button("Hinzufügen")
 
-    # Chat-Eingabe
-    if prompt := st.chat_input("Nachricht an deinen Assistant..."):
-
-        # Nutzer-Eingabe speichern und anzeigen
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
-
-        # Nachricht an Thread senden
-        client.beta.threads.messages.create(
-            thread_id=st.session_state.thread_id,
-            role="user",
-            content=prompt
-        )
-
-        # Assistant-Run starten
-        run = client.beta.threads.runs.create(
-            thread_id=st.session_state.thread_id,
-            assistant_id="asst_HsHMJirBzfDZymplBlXKqFmQ"
-        )
-
-        # Warten bis die Antwort fertig ist
-        with st.chat_message("assistant"):
-            placeholder = st.empty()
-            while True:
-                run_status = client.beta.threads.runs.retrieve(
-                    thread_id=st.session_state.thread_id,
-                    run_id=run.id
-                )
-                if run_status.status == "completed":
-                    break
-                elif run_status.status in ["failed", "cancelled", "expired"]:
-                    placeholder.error("Fehler beim Ausführen des Assistant-Runs.")
-                    st.stop()
-                time.sleep(1)
-
-            # Antworten abrufen
-            messages = client.beta.threads.messages.list(
-                thread_id=st.session_state.thread_id
+        if submit and name:
+            med = Medication(
+                id=str(uuid.uuid4()),
+                user_id=USER_ID,
+                name=name,
+                dose=dose or None,
+                times=[t.strip() for t in times.split(",")],
+                start_date=None,
+                end_date=None
             )
+            data = storage.load_data()
+            data["medications"].append(med.dict())
+            storage.save_data(data)
+            st.success("Medikament hinzugefügt")
+            st.experimental_rerun()
 
-            # Letzte Assistant-Antwort anzeigen
-            last_message = messages.data[0].content[0].text.value
-            placeholder.markdown(last_message)
-            st.session_state.messages.append({"role": "assistant", "content": last_message})
+# Interaktionen prüfen
+if st.sidebar.button("Interaktionen prüfen"):
+    conflicts = rule_engine.check_conflicts(meds, rules)
+    st.session_state["conflicts"] = conflicts
+
+st.header("Einnahmeplan")
+for m in meds:
+    st.write(f"**{m['name']}** ({m.get('dose','')}) → {m['times']}")
+
+conflicts = st.session_state.get("conflicts")
+
+if conflicts:
+    st.error(f"{len(conflicts)} Konflikt(e) erkannt")
+    for c in conflicts:
+        st.write(c)
+        if st.button("Vorschlag generieren", key=c["med_a_id"]):
+            suggestions = suggestion_engine.generate_suggestions(meds, rules)
+            st.session_state["suggestions"] = suggestions
+
+suggestions = st.session_state.get("suggestions")
+if suggestions:
+    st.header("Vorschläge")
+    for s in suggestions:
+        for cand in s["candidates"]:
+            if st.button(f"{cand['old_time']} → {cand['new_time']}"):
+                suggestion_engine.apply_suggestion(
+                    USER_ID,
+                    {"candidates": [cand]},
+                    meds,
+                    storage
+                )
+                st.success("Vorschlag angewendet")
+                st.experimental_rerun()
